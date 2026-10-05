@@ -662,6 +662,7 @@
           region: legacyRegionMap[alert.region] || alert.region,
           postedBy: (alert.postedBy || '').replace(/Huawei PM/g, 'Huawei Team'),
           feedback: alert.feedback === 'Under check by subcontractor' ? '' : alert.feedback,
+          feedbackSent: Boolean(alert.feedbackSent || (alert.feedback && alert.feedback.trim())),
           category: alert.category === 'OMC Power'
             ? 'Power Issue'
             : alert.category === 'Access Issue' && /site not delivered/i.test(alert.description || '')
@@ -750,7 +751,7 @@
         const tr = document.createElement('tr');
         tr.className = "hover:bg-gray-50/80 transition";
         const isReceived = !isAlertOwnedByCurrentUser(alert, currentUser);
-        const hasFeedback = Boolean(alert.feedback && alert.feedback.trim());
+        const hasFeedback = Boolean(alert.feedbackSent || (alert.feedback && alert.feedback.trim()));
         const admin = isAdminUser(currentUser);
         const canEditFeedback = admin || isReceived;
         const canEditStatus = admin || (currentUser.role === 'SUBCONTRACTOR' && isReceived);
@@ -804,7 +805,7 @@
             ${canEditFeedback ? `
               <div class="space-y-1">
                 ${feedbackBadge}
-                <input type="text" id="feedbackInput-${alert.id}" value="${alert.feedback || ''}" placeholder="Type action feedback..." class="w-full text-xs px-2 py-1 border border-gray-300 rounded focus:ring-1 focus:ring-teal-600">
+                <input type="text" id="feedbackInput-${alert.id}" value="${alert.feedback || ''}" placeholder="Optional feedback..." class="w-full text-xs px-2 py-1 border border-gray-300 rounded focus:ring-1 focus:ring-teal-600">
                 <button onclick="saveFeedback('${alert.id}')" class="text-xs bg-teal-700 hover:bg-teal-800 text-white px-2 py-0.5 rounded shadow-sm">Send Feedback</button>
               </div>
             ` : `
@@ -854,6 +855,7 @@
         postedByUid: user.uid,
         postedBy: user.fullName + ' (' + user.company + ')',
         feedback: '',
+        feedbackSent: false,
         status: 'PENDING',
         updatedAt: new Date().toLocaleTimeString()
       };
@@ -883,6 +885,7 @@
       if (window.FB && window.FB.isFirebaseConfigured) {
         await window.FB.updateDoc(window.FB.doc(window.FB.db, "alerts", alertId), {
           feedback: feedbackText,
+          feedbackSent: true,
           feedbackByUid: window.AppState.currentUser.uid,
           feedbackAt: new Date().toLocaleTimeString(),
           updatedAt: new Date().toLocaleTimeString()
@@ -890,6 +893,7 @@
       } else {
         if (item) {
           item.feedback = feedbackText;
+          item.feedbackSent = true;
           item.feedbackByUid = window.AppState.currentUser.uid;
           item.feedbackAt = new Date().toLocaleTimeString();
           item.updatedAt = new Date().toLocaleTimeString();
@@ -903,7 +907,7 @@
     async function deleteAlert(alertId) {
       const alertItem = window.AppState.alerts.find(item => item.id === alertId);
       const admin = isAdminUser(window.AppState.currentUser);
-      if (!alertItem || (!admin && (!isAlertOwnedByCurrentUser(alertItem, window.AppState.currentUser) || alertItem.feedback))) return;
+      if (!alertItem || (!admin && (!isAlertOwnedByCurrentUser(alertItem, window.AppState.currentUser) || alertItem.feedbackSent || alertItem.feedback))) return;
       if (!confirm(`Delete alert ${alertItem.duId}? This cannot be undone.`)) return;
 
       if (window.FB && window.FB.isFirebaseConfigured) {
