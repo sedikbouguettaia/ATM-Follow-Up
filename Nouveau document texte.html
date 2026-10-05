@@ -754,9 +754,9 @@
         const hasFeedback = Boolean(alert.feedbackSent || (alert.feedback && alert.feedback.trim()));
         const admin = isAdminUser(currentUser);
         const canEditFeedback = admin || isReceived;
-        const canEditStatus = admin || (currentUser.role === 'SUBCONTRACTOR' && isReceived);
+        const canEditStatus = admin || isReceived;
         const canDelete = admin || (!isReceived && !hasFeedback);
-        const selectedStatus = !admin && currentUser.role === 'SUBCONTRACTOR' && isReceived && alert.status === 'PENDING'
+        const selectedStatus = !admin && isReceived && alert.status === 'PENDING'
           ? 'UNDER_CHECK'
           : alert.status;
         const statusOptions = admin ? `
@@ -938,7 +938,7 @@
     async function updateAlertStatus(alertId, newStatus) {
       const item = window.AppState.alerts.find(alert => alert.id === alertId);
       const user = window.AppState.currentUser;
-      if (!item || (!isAdminUser(user) && (user.role !== 'SUBCONTRACTOR' || isAlertOwnedByCurrentUser(item, user)))) return;
+      if (!item || (!isAdminUser(user) && isAlertOwnedByCurrentUser(item, user))) return;
 
       if (window.FB && window.FB.isFirebaseConfigured) {
         await window.FB.updateDoc(window.FB.doc(window.FB.db, "alerts", alertId), {
