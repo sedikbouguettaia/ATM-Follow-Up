@@ -67,6 +67,7 @@
     }
 
     // Global application state
+    window.ADMIN_EMAIL = 'sadik@admin.com';
     window.AppState = {
       currentUser: null,
       alerts: [],
@@ -323,6 +324,9 @@
             <button id="tabSent" onclick="switchAlertTab('sent')" class="px-4 py-1.5 text-sm font-semibold bg-white text-gray-600">
               Sent <span id="sentCount" class="ml-1 text-xs">0</span>
             </button>
+            <button id="tabAll" onclick="switchAlertTab('all')" class="hidden px-4 py-1.5 text-sm font-semibold bg-white text-gray-600">
+              All <span id="allCount" class="ml-1 text-xs">0</span>
+            </button>
           </div>
           <span class="text-xs font-bold uppercase text-gray-400">Filter By:</span>
           
@@ -469,6 +473,14 @@
       }
     }
 
+    function isAdminEmail(email) {
+      return (email || '').trim().toLowerCase() === window.ADMIN_EMAIL;
+    }
+
+    function isAdminUser(user) {
+      return Boolean(user && (user.role === 'ADMIN' || isAdminEmail(user.email)));
+    }
+
     // AUTH SIGN-UP IMPLEMENTATION
     async function handleSignup(e) {
       e.preventDefault();
@@ -478,6 +490,7 @@
       const region = document.getElementById('signupRegion').value;
       const email = document.getElementById('signupEmail').value;
       const password = document.getElementById('signupPassword').value;
+      const accountRole = isAdminEmail(email) ? 'ADMIN' : role;
 
       try {
         if (window.FB && window.FB.isFirebaseConfigured) {
@@ -487,13 +500,13 @@
 
           // Save User Profile to Firestore
           await window.FB.setDoc(window.FB.doc(window.FB.db, "users", user.uid), {
-            fullName, role, company, region, email
+            fullName, role: accountRole, company, region, email
           });
 
-          window.AppState.currentUser = { uid: user.uid, fullName, role, company, region, email };
+          window.AppState.currentUser = { uid: user.uid, fullName, role: accountRole, company, region, email };
         } else {
           // Local Fallback User Mode
-          window.AppState.currentUser = { uid: 'local-' + Date.now(), fullName, role, company, region, email };
+          window.AppState.currentUser = { uid: 'local-' + Date.now(), fullName, role: accountRole, company, region, email };
         }
 
         initializeDashboard();
@@ -517,7 +530,7 @@
           window.AppState.currentUser = {
             uid: userCredential.user.uid,
             fullName: userCredential.user.displayName || userData.fullName || email,
-            role: userData.role || 'HUAWEIPM',
+            role: isAdminEmail(email) ? 'ADMIN' : userData.role || 'HUAWEIPM',
             company: userData.company || 'Huawei',
             region: userData.region || 'ALL',
             email
@@ -527,7 +540,7 @@
           window.AppState.currentUser = {
             uid: 'local-demo',
             fullName: email.split('@')[0],
-            role: 'HUAWEIPM',
+            role: isAdminEmail(email) ? 'ADMIN' : 'HUAWEIPM',
             company: 'Huawei',
             region: 'ALL',
             email
@@ -572,6 +585,8 @@
       document.getElementById('authSection').classList.remove('hidden');
       document.getElementById('dashboardSection').classList.add('hidden');
       document.getElementById('userHeaderBadge').classList.add('hidden');
+      document.getElementById('btnResetAlerts').classList.add('hidden');
+      document.getElementById('tabAll').classList.add('hidden');
     }
 
     function configureAlertCategories(role) {
@@ -609,6 +624,7 @@
     function initializeDashboard() {
       const user = window.AppState.currentUser;
       if (!user) return;
+      const admin = isAdminUser(user);
 
       // Update Header User Profile
       document.getElementById('authSection').classList.add('hidden');
@@ -617,15 +633,17 @@
 
       document.getElementById('navUserName').innerText = user.fullName;
       const roleBadge = document.getElementById('navUserRoleBadge');
-      roleBadge.innerText = user.role === 'HUAWEIPM' ? 'Huawei Team' : 'Subcontractor';
-      roleBadge.className = user.role === 'HUAWEIPM' 
+      roleBadge.innerText = admin ? 'Administrator' : user.role === 'HUAWEIPM' ? 'Huawei Team' : 'Subcontractor';
+      roleBadge.className = admin || user.role === 'HUAWEIPM'
         ? 'inline-block text-xs px-2 py-0.5 rounded text-white font-medium bg-teal-600'
         : 'inline-block text-xs px-2 py-0.5 rounded text-white font-medium bg-amber-600';
 
-      configureAlertCategories(user.role);
+      configureAlertCategories(user.role === 'SUBCONTRACTOR' && !admin ? 'SUBCONTRACTOR' : 'HUAWEIPM');
       const btnNewAlert = document.getElementById('btnNewAlert');
       btnNewAlert.classList.remove('hidden');
-      document.getElementById('btnResetAlerts').classList.remove('hidden');
+      document.getElementById('btnResetAlerts').classList.toggle('hidden', !admin);
+      document.getElementById('tabAll').classList.toggle('hidden', !admin);
+      window.AppState.activeTab = admin ? 'all' : 'received';
 
       // Load Alerts (Firebase Firestore or Local Storage)
       if (window.FB && window.FB.isFirebaseConfigured) {
@@ -677,12 +695,16 @@
       window.AppState.activeTab = tab;
       const receivedTab = document.getElementById('tabReceived');
       const sentTab = document.getElementById('tabSent');
+      const allTab = document.getElementById('tabAll');
       receivedTab.className = tab === 'received'
         ? 'px-4 py-1.5 text-sm font-semibold bg-teal-700 text-white'
         : 'px-4 py-1.5 text-sm font-semibold bg-white text-gray-600';
       sentTab.className = tab === 'sent'
         ? 'px-4 py-1.5 text-sm font-semibold bg-teal-700 text-white'
         : 'px-4 py-1.5 text-sm font-semibold bg-white text-gray-600';
+      allTab.className = `${tab === 'all'
+        ? 'px-4 py-1.5 text-sm font-semibold bg-teal-700 text-white'
+        : 'hidden px-4 py-1.5 text-sm font-semibold bg-white text-gray-600'}`;
       renderAlertsTable();
     }
 
@@ -697,6 +719,7 @@
       const sentAlerts = window.AppState.alerts.filter(alert => isAlertOwnedByCurrentUser(alert, currentUser));
       document.getElementById('receivedCount').innerText = receivedAlerts.length;
       document.getElementById('sentCount').innerText = sentAlerts.length;
+      document.getElementById('allCount').innerText = window.AppState.alerts.length;
 
       let filtered = window.AppState.alerts.filter(item => {
         const matchesSearch = item.duId.toLowerCase().includes(window.AppState.searchTerm.toLowerCase()) ||
@@ -704,7 +727,9 @@
         const matchesRegion = window.AppState.filterRegion === 'ALL' || item.region === window.AppState.filterRegion;
         const matchesStatus = window.AppState.filterStatus === 'ALL' || item.status === window.AppState.filterStatus;
         const isReceived = !isAlertOwnedByCurrentUser(item, currentUser);
-        const matchesTab = window.AppState.activeTab === 'received' ? isReceived : !isReceived;
+        const matchesTab = isAdminUser(currentUser) || window.AppState.activeTab === 'all'
+          ? true
+          : window.AppState.activeTab === 'received' ? isReceived : !isReceived;
         return matchesSearch && matchesRegion && matchesStatus && matchesTab;
       });
 
@@ -726,6 +751,23 @@
         tr.className = "hover:bg-gray-50/80 transition";
         const isReceived = !isAlertOwnedByCurrentUser(alert, currentUser);
         const hasFeedback = Boolean(alert.feedback && alert.feedback.trim());
+        const admin = isAdminUser(currentUser);
+        const canEditFeedback = admin || isReceived;
+        const canEditStatus = admin || (currentUser.role === 'SUBCONTRACTOR' && isReceived);
+        const canDelete = admin || (!isReceived && !hasFeedback);
+        const selectedStatus = !admin && currentUser.role === 'SUBCONTRACTOR' && isReceived && alert.status === 'PENDING'
+          ? 'UNDER_CHECK'
+          : alert.status;
+        const statusOptions = admin ? `
+          <option value="PENDING" ${selectedStatus === 'PENDING' ? 'selected' : ''}>Pending</option>
+          <option value="UNDER_CHECK" ${selectedStatus === 'UNDER_CHECK' ? 'selected' : ''}>Under Check</option>
+          <option value="NEEDS_INFO" ${selectedStatus === 'NEEDS_INFO' ? 'selected' : ''}>Needs Info</option>
+          <option value="SOLVED" ${selectedStatus === 'SOLVED' ? 'selected' : ''}>Solved</option>
+        ` : `
+          <option value="UNDER_CHECK" ${selectedStatus === 'UNDER_CHECK' ? 'selected' : ''}>Under Check</option>
+          <option value="NEEDS_INFO" ${selectedStatus === 'NEEDS_INFO' ? 'selected' : ''}>Needs Info</option>
+          <option value="SOLVED" ${selectedStatus === 'SOLVED' ? 'selected' : ''}>Solved</option>
+        `;
         const feedbackBadge = hasFeedback
           ? '<span class="inline-block mb-1 px-2 py-0.5 text-xs font-semibold rounded bg-emerald-100 text-emerald-800">Feedback Sent</span>'
           : '<span class="inline-block mb-1 px-2 py-0.5 text-xs font-semibold rounded bg-amber-100 text-amber-800">Awaiting Feedback</span>';
@@ -759,7 +801,7 @@
             ${alert.postedBy}
           </td>
           <td class="py-3.5 px-4 max-w-xs">
-            ${isReceived ? `
+            ${canEditFeedback ? `
               <div class="space-y-1">
                 ${feedbackBadge}
                 <input type="text" id="feedbackInput-${alert.id}" value="${alert.feedback || ''}" placeholder="Type action feedback..." class="w-full text-xs px-2 py-1 border border-gray-300 rounded focus:ring-1 focus:ring-teal-600">
@@ -771,12 +813,9 @@
             `}
           </td>
           <td class="py-3.5 px-4">
-            ${currentUser.role === 'SUBCONTRACTOR' && isReceived ? `
+            ${canEditStatus ? `
               <select onchange="updateAlertStatus('${alert.id}', this.value)" class="text-xs border border-gray-300 rounded px-2 py-1 bg-white font-medium">
-                <option value="PENDING" ${alert.status === 'PENDING' ? 'selected' : ''}>Pending</option>
-                <option value="UNDER_CHECK" ${alert.status === 'UNDER_CHECK' ? 'selected' : ''}>Under Check</option>
-                <option value="NEEDS_INFO" ${alert.status === 'NEEDS_INFO' ? 'selected' : ''}>Needs Info</option>
-                <option value="SOLVED" ${alert.status === 'SOLVED' ? 'selected' : ''}>Solved</option>
+                ${statusOptions}
               </select>
             ` : `
               <span class="inline-block px-2.5 py-1 text-xs font-bold rounded-full border ${statusBadgeClass}">${statusLabel}</span>
@@ -786,7 +825,7 @@
             <button onclick="copyWhatsAppFormat('${alert.id}')" title="Copy WhatsApp Message" class="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition">
               <i class="fa-brands fa-whatsapp text-lg"></i>
             </button>
-            ${!isReceived ? `
+            ${canDelete ? `
               <button onclick="deleteAlert('${alert.id}')" title="Delete Alert" class="p-2 text-red-600 hover:bg-red-50 rounded-lg transition">
                 <i class="fa-solid fa-trash-can"></i>
               </button>
@@ -838,6 +877,8 @@
     async function saveFeedback(alertId) {
       const input = document.getElementById(`feedbackInput-${alertId}`);
       const feedbackText = input.value.trim();
+      const item = window.AppState.alerts.find(alert => alert.id === alertId);
+      if (!item || (!isAdminUser(window.AppState.currentUser) && isAlertOwnedByCurrentUser(item, window.AppState.currentUser))) return;
 
       if (window.FB && window.FB.isFirebaseConfigured) {
         await window.FB.updateDoc(window.FB.doc(window.FB.db, "alerts", alertId), {
@@ -847,7 +888,6 @@
           updatedAt: new Date().toLocaleTimeString()
         });
       } else {
-        const item = window.AppState.alerts.find(a => a.id === alertId);
         if (item) {
           item.feedback = feedbackText;
           item.feedbackByUid = window.AppState.currentUser.uid;
@@ -862,7 +902,8 @@
 
     async function deleteAlert(alertId) {
       const alertItem = window.AppState.alerts.find(item => item.id === alertId);
-      if (!alertItem || !isAlertOwnedByCurrentUser(alertItem, window.AppState.currentUser)) return;
+      const admin = isAdminUser(window.AppState.currentUser);
+      if (!alertItem || (!admin && (!isAlertOwnedByCurrentUser(alertItem, window.AppState.currentUser) || alertItem.feedback))) return;
       if (!confirm(`Delete alert ${alertItem.duId}? This cannot be undone.`)) return;
 
       if (window.FB && window.FB.isFirebaseConfigured) {
@@ -875,6 +916,7 @@
     }
 
     async function resetAlerts() {
+      if (!isAdminUser(window.AppState.currentUser)) return;
       if (!confirm('Delete all alerts and start from zero? This cannot be undone.')) return;
 
       if (window.FB && window.FB.isFirebaseConfigured) {
@@ -890,13 +932,16 @@
 
     // ACTIONS: UPDATE STATUS (SUBCONTRACTOR)
     async function updateAlertStatus(alertId, newStatus) {
+      const item = window.AppState.alerts.find(alert => alert.id === alertId);
+      const user = window.AppState.currentUser;
+      if (!item || (!isAdminUser(user) && (user.role !== 'SUBCONTRACTOR' || isAlertOwnedByCurrentUser(item, user)))) return;
+
       if (window.FB && window.FB.isFirebaseConfigured) {
         await window.FB.updateDoc(window.FB.doc(window.FB.db, "alerts", alertId), {
           status: newStatus,
           updatedAt: new Date().toLocaleTimeString()
         });
       } else {
-        const item = window.AppState.alerts.find(a => a.id === alertId);
         if (item) {
           item.status = newStatus;
           item.updatedAt = new Date().toLocaleTimeString();
