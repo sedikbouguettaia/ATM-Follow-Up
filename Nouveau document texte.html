@@ -1,0 +1,922 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OMC & SE Telecom Site Regional Follow-Up</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <!-- Firebase App & Services (v10.8.0 modular SDK) -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+    import { 
+      getAuth, 
+      createUserWithEmailAndPassword, 
+      signInWithEmailAndPassword, 
+      signOut, 
+      onAuthStateChanged,
+      updateProfile 
+    } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+    import { 
+      getFirestore, 
+      collection, 
+      doc, 
+      setDoc, 
+      getDoc, 
+      addDoc, 
+      onSnapshot, 
+      updateDoc, 
+      query, 
+      orderBy, 
+      serverTimestamp 
+    } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+    // Replace these demo values with the Firebase config from your project.
+    const firebaseConfig = {
+      apiKey: "AIzaSyDemoConfigForTelecomSiteTrackerKey",
+      authDomain: "telecom-tracker-demo.firebaseapp.com",
+      projectId: "telecom-tracker-demo",
+      storageBucket: "telecom-tracker-demo.appspot.com",
+      messagingSenderId: "100000000000",
+      appId: "1:100000000000:web:abcdef1234567890"
+    };
+
+    // Do not call Firebase with the sample values. The app has a localStorage fallback
+    // for testing until a real Firebase project configuration is provided.
+    let app, auth, db;
+    let isFirebaseConfigured = false;
+    const hasPlaceholderConfig = firebaseConfig.apiKey.includes('DemoConfig') ||
+      firebaseConfig.projectId === 'telecom-tracker-demo';
+
+    if (!hasPlaceholderConfig) {
+      try {
+        app = initializeApp(firebaseConfig);
+        auth = getAuth(app);
+        db = getFirestore(app);
+        isFirebaseConfigured = true;
+      } catch (e) {
+        console.warn("Firebase unavailable; using Local Fallback mode.", e);
+      }
+    } else {
+      console.info("Firebase is not configured; using Local Fallback mode.");
+    }
+
+    // Global application state
+    window.AppState = {
+      currentUser: null,
+      alerts: [],
+      filterRegion: 'ALL',
+      filterStatus: 'ALL',
+      searchTerm: '',
+      activeTab: 'received'
+    };
+
+    // Make Firebase services accessible globally for UI event handlers
+    window.FB = { auth, db, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, updateProfile, collection, doc, setDoc, getDoc, addDoc, onSnapshot, updateDoc, query, orderBy, serverTimestamp, isFirebaseConfigured };
+  </script>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: #f3f4f6;
+    }
+    .huawei-teal { background-color: #005a5b; }
+    .huawei-teal-dark { background-color: #004344; }
+    .text-huawei { color: #005a5b; }
+    .border-huawei { border-color: #005a5b; }
+  </style>
+</head>
+<body class="min-h-screen text-gray-800 flex flex-col justify-between">
+
+  <!-- Top Navigation Bar -->
+  <header class="huawei-teal text-white shadow-md">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col md:flex-row justify-between items-center gap-4">
+      
+      <!-- Brand Logo / Title -->
+      <div class="flex items-center space-x-3 text-center md:text-left">
+        <img src="huawei%20logo.png" alt="Huawei logo" class="h-10 w-40 rounded-lg object-cover object-center shadow-sm">
+        <div>
+          <h1 class="text-xl md:text-2xl font-bold tracking-tight">ATM Regional Follow-Up</h1>
+          <p class="text-xs text-teal-100">Huawei Telecom Regional Site Alert & Subcontractor Follow-Up System</p>
+        </div>
+      </div>
+  <!-- User Profile Badge & Logout -->
+      <div id="userHeaderBadge" class="hidden flex items-center space-x-3 bg-teal-900/60 border border-teal-500/30 px-4 py-2 rounded-lg">
+        <div class="text-right">
+          <p id="navUserName" class="text-sm font-semibold text-white">Loading...</p>
+          <span id="navUserRoleBadge" class="inline-block text-xs px-2 py-0.5 rounded text-white font-medium bg-teal-600">
+            --
+          </span>
+        </div>
+        <button onclick="handleLogout()" title="Sign Out" class="p-2 text-teal-200 hover:text-white hover:bg-teal-700/50 rounded-lg transition">
+          <i class="fa-solid fa-right-from-bracket text-lg"></i>
+        </button>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- Main Body Content -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex-grow w-full">
+
+    <!-- ==================== SECTION 1: AUTHENTICATION / PRE-SIGNUP FORM ==================== -->
+    <section id="authSection" class="max-w-xl mx-auto bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100 my-8">
+      
+      <!-- Auth Tab Headers -->
+      <div class="flex border-b border-gray-200">
+        <button id="tabBtnLogin" onclick="switchAuthTab('login')" class="flex-1 py-4 text-center font-semibold text-teal-800 border-b-2 border-teal-700 bg-teal-50/50 transition">
+          <i class="fa-solid fa-lock me-2"></i>Sign In
+        </button>
+        <button id="tabBtnSignup" onclick="switchAuthTab('signup')" class="flex-1 py-4 text-center font-semibold text-gray-500 hover:text-teal-800 border-b-2 border-transparent transition">
+          <i class="fa-solid fa-user-plus me-2"></i>New Account Sign-Up
+        </button>
+      </div>
+
+      <div class="p-6 md:p-8">
+        
+        <!-- LOGIN FORM -->
+        <form id="loginForm" onsubmit="handleLogin(event)" class="space-y-5">
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-wider text-gray-600 mb-1">Email Address</label>
+            <div class="relative">
+              <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
+                <i class="fa-solid fa-envelope"></i>
+              </span>
+              <input type="email" id="loginEmail" required class="w-full pl-10 pr-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-teal-600 focus:outline-none" placeholder="name@company.com">
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-wider text-gray-600 mb-1">Password</label>
+            <div class="relative">
+              <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
+                <i class="fa-solid fa-key"></i>
+              </span>
+              <input type="password" id="loginPassword" required class="w-full pl-10 pr-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-teal-600 focus:outline-none" placeholder="••••••••">
+            </div>
+          </div>
+
+          <button type="submit" class="w-full bg-teal-800 hover:bg-teal-900 text-white font-bold py-3 rounded-lg shadow-md transition flex items-center justify-center gap-2">
+            <span>Sign In to Dashboard</span>
+            <i class="fa-solid fa-arrow-right"></i>
+          </button>
+        </form>
+
+        <!-- PRE-SIGNUP FORM (PRE-SELECT ROLE & DETAILS) -->
+        <form id="signupForm" onsubmit="handleSignup(event)" class="space-y-4 hidden">
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-wider text-gray-600 mb-1">Full Name <span class="text-red-500">*</span></label>
+            <input type="text" id="signupFullName" required class="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-teal-600 focus:outline-none" placeholder="e.g., Sedik Bouguettaia">
+          </div>
+
+          <!-- ROLE SELECTOR -->
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-wider text-gray-600 mb-1">Select Account Type / Role <span class="text-red-500">*</span></label>
+            <div class="grid grid-cols-2 gap-3">
+              <label class="border-2 border-gray-200 rounded-lg p-3 flex items-center space-x-2 cursor-pointer hover:border-teal-600 transition" id="labelRoleHuawei">
+                <input type="radio" name="signupRole" value="HUAWEIPM" checked onchange="toggleSignupFields('HUAWEIPM')" class="text-teal-700 focus:ring-teal-600">
+                <div>
+                  <p class="font-bold text-sm text-gray-800">Huawei PM</p>
+                  <p class="text-xs text-gray-500">Post Alerts / Issues</p>
+                </div>
+              </label>
+
+              <label class="border-2 border-gray-200 rounded-lg p-3 flex items-center space-x-2 cursor-pointer hover:border-teal-600 transition" id="labelRoleSubcontractor">
+                <input type="radio" name="signupRole" value="SUBCONTRACTOR" onchange="toggleSignupFields('SUBCONTRACTOR')" class="text-teal-700 focus:ring-teal-600">
+                <div>
+                  <p class="font-bold text-sm text-gray-800">Subcontractor</p>
+                  <p class="text-xs text-gray-500">Solve & Give Feedback</p>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <!-- COMPANY / SUBCONTRACTOR NAME -->
+          <div id="companyFieldGroup">
+            <label class="block text-xs font-bold uppercase tracking-wider text-gray-600 mb-1">Company / Team Name <span class="text-red-500">*</span></label>
+            <input type="text" id="signupCompany" required class="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-teal-600 focus:outline-none" placeholder="Huawei / Partner Subcontractor Name">
+          </div>
+
+          <!-- REGION SELECT -->
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-wider text-gray-600 mb-1">Assigned Region <span class="text-red-500">*</span></label>
+            <select id="signupRegion" class="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-teal-600 focus:outline-none bg-white">
+              <option value="ALL">All Regions (National Overhead)</option>
+              <option value="ANNABA">Annaba</option>
+              <option value="BATNA">Batna</option>
+              <option value="ORAN">Oran</option>
+              <option value="BISKRA">Biskra</option>
+              <option value="ALGER">Alger</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-wider text-gray-600 mb-1">Email Address <span class="text-red-500">*</span></label>
+            <input type="email" id="signupEmail" required class="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-teal-600 focus:outline-none" placeholder="name@company.com">
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-wider text-gray-600 mb-1">Password <span class="text-red-500">*</span></label>
+            <input type="password" id="signupPassword" minlength="6" required class="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-teal-600 focus:outline-none" placeholder="Minimum 6 characters">
+          </div>
+
+          <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-lg shadow-md transition flex items-center justify-center gap-2 mt-2">
+            <i class="fa-solid fa-user-check"></i>
+            <span>Register & Initialize Portal</span>
+          </button>
+        </form>
+
+        <!-- DEMO LOCAL MODE QUICK ACCESS (For immediate testing) -->
+        <div class="mt-6 pt-6 border-t border-gray-200 text-center">
+          <p class="text-xs text-gray-500 mb-3">Or click below for Instant Local Testing without registration:</p>
+          <div class="flex gap-2 justify-center">
+            <button onclick="quickDemoLogin('HUAWEIPM')" class="px-3 py-1.5 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold rounded-md border border-gray-300 transition">
+              <i class="fa-solid fa-user-gear me-1"></i>Demo as Huawei PM
+            </button>
+            <button onclick="quickDemoLogin('SUBCONTRACTOR')" class="px-3 py-1.5 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold rounded-md border border-gray-300 transition">
+              <i class="fa-solid fa-wrench me-1"></i>Demo as Subcontractor
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ==================== SECTION 2: APPLICATION DASHBOARD ==================== -->
+    <section id="dashboardSection" class="hidden space-y-6">
+
+      <!-- TOP ACTION BAR & METRICS -->
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <!-- Metric Card 1 -->
+        <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center justify-between">
+          <div>
+            <p class="text-xs font-bold uppercase tracking-wider text-gray-500">Total Site Alerts</p>
+            <p id="statTotal" class="text-2xl font-black text-gray-800">0</p>
+          </div>
+          <div class="bg-blue-50 text-blue-600 p-3 rounded-lg"><i class="fa-solid fa-list-check text-xl"></i></div>
+        </div>
+
+        <!-- Metric Card 2 -->
+        <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center justify-between">
+          <div>
+            <p class="text-xs font-bold uppercase tracking-wider text-gray-500">Pending Action</p>
+            <p id="statPending" class="text-2xl font-black text-amber-600">0</p>
+          </div>
+          <div class="bg-amber-50 text-amber-600 p-3 rounded-lg"><i class="fa-solid fa-clock-rotate-left text-xl"></i></div>
+        </div>
+
+        <!-- Metric Card 3 -->
+        <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center justify-between">
+          <div>
+            <p class="text-xs font-bold uppercase tracking-wider text-gray-500">Under Check</p>
+            <p id="statUnderCheck" class="text-2xl font-black text-indigo-600">0</p>
+          </div>
+          <div class="bg-indigo-50 text-indigo-600 p-3 rounded-lg"><i class="fa-solid fa-magnifying-glass text-xl"></i></div>
+        </div>
+
+        <!-- Metric Card 4 -->
+        <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center justify-between">
+          <div>
+            <p class="text-xs font-bold uppercase tracking-wider text-gray-500">Solved / Completed</p>
+            <p id="statSolved" class="text-2xl font-black text-emerald-600">0</p>
+          </div>
+          <div class="bg-emerald-50 text-emerald-600 p-3 rounded-lg"><i class="fa-solid fa-circle-check text-xl"></i></div>
+        </div>
+      </div>
+
+      <!-- SEARCH & FILTER HEADER (MIRRORING REFERENCE UI) -->
+      <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 space-y-4">
+        
+        <div class="flex flex-col md:flex-row gap-3 items-center">
+          
+          <!-- Search Box (DU ID Search) -->
+          <div class="relative flex-grow w-full">
+            <span class="absolute inset-y-0 left-0 flex items-center pl-3.5 text-gray-400">
+              <i class="fa-solid fa-magnifying-glass"></i>
+            </span>
+            <input type="text" id="searchInput" oninput="handleSearch(this.value)" class="w-full pl-10 pr-4 py-3 rounded-xl border-2 border-gray-200 focus:border-teal-700 focus:outline-none text-base" placeholder="Enter DU ID (e.g. DU-10928) or Site Code...">
+          </div>
+
+          <!-- Post New Alert Button -->
+          <button id="btnNewAlert" onclick="openAlertModal()" class="hidden w-full md:w-auto px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md transition flex items-center justify-center gap-2 whitespace-nowrap">
+            <i class="fa-solid fa-plus-circle"></i>
+            <span>Post New Site Alert</span>
+          </button>
+        </div>
+
+        <!-- Filter Dropdowns -->
+        <div class="flex flex-wrap gap-3 items-center pt-2 border-t border-gray-100">
+          <div class="flex rounded-lg border border-gray-200 overflow-hidden mr-2">
+            <button id="tabReceived" onclick="switchAlertTab('received')" class="px-4 py-1.5 text-sm font-semibold bg-teal-700 text-white">
+              Received <span id="receivedCount" class="ml-1 text-xs">0</span>
+            </button>
+            <button id="tabSent" onclick="switchAlertTab('sent')" class="px-4 py-1.5 text-sm font-semibold bg-white text-gray-600">
+              Sent <span id="sentCount" class="ml-1 text-xs">0</span>
+            </button>
+          </div>
+          <span class="text-xs font-bold uppercase text-gray-400">Filter By:</span>
+          
+          <select id="filterRegion" onchange="applyFilters()" class="text-sm border border-gray-300 rounded-lg px-3 py-1.5 bg-gray-50 font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-600">
+            <option value="ALL">All Regions</option>
+            <option value="ANNABA">Annaba</option>
+            <option value="BATNA">Batna</option>
+            <option value="ORAN">Oran</option>
+            <option value="BISKRA">Biskra</option>
+            <option value="ALGER">Alger</option>
+          </select>
+
+          <select id="filterStatus" onchange="applyFilters()" class="text-sm border border-gray-300 rounded-lg px-3 py-1.5 bg-gray-50 font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-600">
+            <option value="ALL">All Statuses</option>
+            <option value="PENDING">Pending Check</option>
+            <option value="UNDER_CHECK">Under Check</option>
+            <option value="NEEDS_INFO">Needs Info</option>
+            <option value="SOLVED">Solved</option>
+          </select>
+        </div>
+
+      </div>
+
+      <!-- MAIN TABLE / SITE LIST -->
+      <div class="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead>
+              <tr class="bg-gray-100/80 text-gray-600 text-xs uppercase tracking-wider font-bold border-b border-gray-200">
+                <th class="py-3.5 px-4">DU ID & Site</th>
+                <th class="py-3.5 px-4">Region</th>
+                <th class="py-3.5 px-4">Issue / Alert Details</th>
+                <th class="py-3.5 px-4">Posted By</th>
+                <th class="py-3.5 px-4">Subcontractor Feedback & Action</th>
+                <th class="py-3.5 px-4">Status</th>
+                <th class="py-3.5 px-4 text-center">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="alertsTableBody" class="divide-y divide-gray-100 text-sm">
+              <!-- Dynamically Populated -->
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Empty State Container -->
+        <div id="emptyState" class="hidden py-12 text-center text-gray-400">
+          <i class="fa-solid fa-folder-open text-4xl mb-3"></i>
+          <p class="font-semibold text-base">No site alerts found matching your filters.</p>
+        </div>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- ==================== MODAL: POST NEW SITE ALERT ==================== -->
+  <div id="alertModal" class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-gray-200 animate-fade-in">
+      
+      <div class="huawei-teal text-white p-4 flex justify-between items-center">
+        <h3 class="font-bold text-lg"><i class="fa-solid fa-triangle-exclamation me-2"></i><span id="alertModalTitle">Post Site Alert</span></h3>
+        <button onclick="closeAlertModal()" class="text-teal-200 hover:text-white text-xl font-bold">&times;</button>
+      </div>
+
+      <form onsubmit="handleCreateAlert(event)" class="p-6 space-y-4">
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-bold uppercase text-gray-600 mb-1">DU ID <span class="text-red-500">*</span></label>
+            <input type="text" id="newDuId" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-600 focus:outline-none" placeholder="e.g. DU-10842">
+          </div>
+          <div>
+            <label class="block text-xs font-bold uppercase text-gray-600 mb-1">Region <span class="text-red-500">*</span></label>
+            <select id="newRegion" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-600 focus:outline-none bg-white">
+              <option value="ANNABA">Annaba</option>
+              <option value="BATNA">Batna</option>
+              <option value="ORAN">Oran</option>
+              <option value="BISKRA">Biskra</option>
+              <option value="ALGER">Alger</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold uppercase text-gray-600 mb-1">Alert Category <span class="text-red-500">*</span></label>
+          <select id="newCategory" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-600 focus:outline-none bg-white">
+            <option value="Delivery Issue">Delivery Issue / Site Not Delivered</option>
+            <option value="Power Issue">Power Issue</option>
+            <option value="Missing Materials">Missing Materials / Hardware</option>
+            <option value="EHS Inspection">EHS Non-Compliance Alert</option>
+            <option value="Subcontractor Delay">Subcontractor On-Site Delay</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold uppercase text-gray-600 mb-1">Issue Description & Remarks <span class="text-red-500">*</span></label>
+          <textarea id="newDescription" required rows="3" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-600 focus:outline-none" placeholder="Explain site blockage details..."></textarea>
+        </div>
+
+        <div class="flex justify-end gap-3 pt-4 border-t border-gray-100">
+          <button type="button" onclick="closeAlertModal()" class="px-4 py-2 border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50 font-semibold text-sm">Cancel</button>
+          <button type="submit" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-sm shadow-md">Dispatch Alert</button>
+        </div>
+      </form>
+
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <footer class="bg-gray-900 text-gray-400 py-4 text-center text-xs border-t border-gray-800 mt-12">
+    <p>OMC & SE Telecom Site Regional Tracker &copy; 2026. Designed for Huawei Site Follow-Up Workflows.</p>
+  </footer>
+
+  <!-- APPLICATION LOGIC SCRIPT -->
+  <script>
+    // Initial Sample Mock Data (Loaded in demo local mode)
+    const SAMPLE_ALERTS = [
+      {
+        id: 'alt-1',
+        duId: 'DU-10294',
+        region: 'ANNABA',
+        category: 'Delivery Issue',
+        description: 'Site not delivered, lease holder refused site access today. Please check access permission.',
+        postedBy: 'Alex Chen (Huawei PM)',
+        assignedSubcontractor: 'Telecom Build Co',
+        feedback: 'Under check. Contacted landlord, access promised tomorrow 8:00 AM.',
+        status: 'UNDER_CHECK',
+        updatedAt: new Date().toLocaleTimeString()
+      },
+      {
+        id: 'alt-2',
+        duId: 'DU-20491',
+        region: 'ORAN',
+        category: 'Missing Materials',
+        description: 'Missing 100m optical fiber cables on site. Work halted.',
+        postedBy: 'Li Wei (Huawei PM)',
+        assignedSubcontractor: 'Alpha Infra',
+        feedback: 'Cables collected from warehouse, en route to site.',
+        status: 'SOLVED',
+        updatedAt: new Date().toLocaleTimeString()
+      }
+    ];
+
+    // Auth Switcher UI Handler
+    function switchAuthTab(tab) {
+      const loginForm = document.getElementById('loginForm');
+      const signupForm = document.getElementById('signupForm');
+      const tabBtnLogin = document.getElementById('tabBtnLogin');
+      const tabBtnSignup = document.getElementById('tabBtnSignup');
+
+      if (tab === 'login') {
+        loginForm.classList.remove('hidden');
+        signupForm.classList.add('hidden');
+        tabBtnLogin.className = "flex-1 py-4 text-center font-semibold text-teal-800 border-b-2 border-teal-700 bg-teal-50/50 transition";
+        tabBtnSignup.className = "flex-1 py-4 text-center font-semibold text-gray-500 hover:text-teal-800 border-b-2 border-transparent transition";
+      } else {
+        loginForm.classList.add('hidden');
+        signupForm.classList.remove('hidden');
+        tabBtnSignup.className = "flex-1 py-4 text-center font-semibold text-teal-800 border-b-2 border-teal-700 bg-teal-50/50 transition";
+        tabBtnLogin.className = "flex-1 py-4 text-center font-semibold text-gray-500 hover:text-teal-800 border-b-2 border-transparent transition";
+      }
+    }
+
+    function toggleSignupFields(role) {
+      const companyInput = document.getElementById('signupCompany');
+      if (role === 'HUAWEIPM') {
+        companyInput.value = 'Huawei Technologies';
+      } else {
+        companyInput.value = '';
+      }
+    }
+
+    // AUTH SIGN-UP IMPLEMENTATION
+    async function handleSignup(e) {
+      e.preventDefault();
+      const fullName = document.getElementById('signupFullName').value;
+      const role = document.querySelector('input[name="signupRole"]:checked').value;
+      const company = document.getElementById('signupCompany').value;
+      const region = document.getElementById('signupRegion').value;
+      const email = document.getElementById('signupEmail').value;
+      const password = document.getElementById('signupPassword').value;
+
+      try {
+        if (window.FB && window.FB.isFirebaseConfigured) {
+          const userCredential = await window.FB.createUserWithEmailAndPassword(window.FB.auth, email, password);
+          const user = userCredential.user;
+          await window.FB.updateProfile(user, { displayName: fullName });
+
+          // Save User Profile to Firestore
+          await window.FB.setDoc(window.FB.doc(window.FB.db, "users", user.uid), {
+            fullName, role, company, region, email
+          });
+
+          window.AppState.currentUser = { uid: user.uid, fullName, role, company, region, email };
+        } else {
+          // Local Fallback User Mode
+          window.AppState.currentUser = { uid: 'local-' + Date.now(), fullName, role, company, region, email };
+        }
+
+        initializeDashboard();
+      } catch (err) {
+        alert("Registration Error: " + err.message);
+      }
+    }
+
+    // AUTH LOGIN IMPLEMENTATION
+    async function handleLogin(e) {
+      e.preventDefault();
+      const email = document.getElementById('loginEmail').value;
+      const password = document.getElementById('loginPassword').value;
+
+      try {
+        if (window.FB && window.FB.isFirebaseConfigured) {
+          const userCredential = await window.FB.signInWithEmailAndPassword(window.FB.auth, email, password);
+          const userDoc = await window.FB.getDoc(window.FB.doc(window.FB.db, "users", userCredential.user.uid));
+          const userData = userDoc.data() || {};
+
+          window.AppState.currentUser = {
+            uid: userCredential.user.uid,
+            fullName: userCredential.user.displayName || userData.fullName || email,
+            role: userData.role || 'HUAWEIPM',
+            company: userData.company || 'Huawei',
+            region: userData.region || 'ALL',
+            email
+          };
+        } else {
+          // Demo fallback
+          window.AppState.currentUser = {
+            uid: 'local-demo',
+            fullName: email.split('@')[0],
+            role: 'HUAWEIPM',
+            company: 'Huawei',
+            region: 'ALL',
+            email
+          };
+        }
+
+        initializeDashboard();
+      } catch (err) {
+        alert("Login Error: " + err.message);
+      }
+    }
+
+    // QUICK DEMO LOGIN (TESTING WITHOUT FIREBASE ACCOUNT)
+    function quickDemoLogin(role) {
+      if (role === 'HUAWEIPM') {
+        window.AppState.currentUser = {
+          uid: 'demo-pm',
+          fullName: 'Huawei PM (Demo)',
+          role: 'HUAWEIPM',
+          company: 'Huawei Technologies',
+          region: 'ALL',
+          email: 'pm@huawei.com'
+        };
+      } else {
+        window.AppState.currentUser = {
+          uid: 'demo-sub',
+          fullName: 'Subcontractor Partner (Demo)',
+          role: 'SUBCONTRACTOR',
+          company: 'Subcontractor Team',
+          region: 'ANNABA',
+          email: 'subcontractor@partner.com'
+        };
+      }
+      initializeDashboard();
+    }
+
+    function handleLogout() {
+      if (window.FB && window.FB.isFirebaseConfigured) {
+        window.FB.signOut(window.FB.auth);
+      }
+      window.AppState.currentUser = null;
+      document.getElementById('authSection').classList.remove('hidden');
+      document.getElementById('dashboardSection').classList.add('hidden');
+      document.getElementById('userHeaderBadge').classList.add('hidden');
+    }
+
+    function configureAlertCategories(role) {
+      const categorySelect = document.getElementById('newCategory');
+      const categories = role === 'SUBCONTRACTOR'
+        ? [
+            ['Access Issue', 'Access Issue'],
+            ['OMC Issue', 'OMC Issue'],
+            ['Genie Civil', 'Genie Civil'],
+            ['Wrong Site Survey', 'Wrong Site Survey'],
+            ['Site Blocked', 'Site Blocked'],
+            ['Risky Site (EHS)', 'Risky Site (EHS)'],
+            ['Unsecured Site', 'Unsecured Site'],
+            ['Others', 'Others']
+          ]
+        : [
+            ['Delivery Issue', 'Delivery Issue / Site Not Delivered'],
+            ['Power Issue', 'Power Issue'],
+            ['Missing Materials', 'Missing Materials / Hardware'],
+            ['EHS Inspection', 'EHS Non-Compliance Alert'],
+            ['Subcontractor Delay', 'Subcontractor On-Site Delay'],
+            ['Others', 'Others']
+          ];
+
+      categorySelect.innerHTML = categories
+        .map(([value, label]) => `<option value="${value}">${label}</option>`)
+        .join('');
+      document.getElementById('alertModalTitle').innerText = role === 'SUBCONTRACTOR'
+        ? 'Post Subcontractor Site Alert'
+        : 'Post Huawei Site Alert';
+    }
+
+    // INITIALIZE DASHBOARD UI AFTER AUTH
+    function initializeDashboard() {
+      const user = window.AppState.currentUser;
+      if (!user) return;
+
+      // Update Header User Profile
+      document.getElementById('authSection').classList.add('hidden');
+      document.getElementById('dashboardSection').classList.remove('hidden');
+      document.getElementById('userHeaderBadge').classList.remove('hidden');
+
+      document.getElementById('navUserName').innerText = user.fullName;
+      const roleBadge = document.getElementById('navUserRoleBadge');
+      roleBadge.innerText = user.role === 'HUAWEIPM' ? 'Huawei PM' : 'Subcontractor';
+      roleBadge.className = user.role === 'HUAWEIPM' 
+        ? 'inline-block text-xs px-2 py-0.5 rounded text-white font-medium bg-teal-600'
+        : 'inline-block text-xs px-2 py-0.5 rounded text-white font-medium bg-amber-600';
+
+      configureAlertCategories(user.role);
+      const btnNewAlert = document.getElementById('btnNewAlert');
+      btnNewAlert.classList.remove('hidden');
+
+      // Load Alerts (Firebase Firestore or Local Storage)
+      if (window.FB && window.FB.isFirebaseConfigured) {
+        subscribeToFirestoreAlerts();
+      } else {
+        const savedAlerts = JSON.parse(localStorage.getItem('telecom_alerts')) || SAMPLE_ALERTS;
+        const legacyRegionMap = {
+          NORTH: 'ANNABA',
+          SOUTH: 'ORAN',
+          EAST: 'BATNA',
+          WEST: 'ORAN',
+          CENTRAL: 'ALGER'
+        };
+        window.AppState.alerts = savedAlerts.map(alert => ({
+          ...alert,
+          region: legacyRegionMap[alert.region] || alert.region,
+          category: alert.category === 'OMC Power'
+            ? 'Power Issue'
+            : alert.category === 'Access Issue' && /site not delivered/i.test(alert.description || '')
+              ? 'Delivery Issue'
+              : alert.category
+        }));
+        localStorage.setItem('telecom_alerts', JSON.stringify(window.AppState.alerts));
+        renderAlertsTable();
+      }
+    }
+
+    // FIRESTORE REALTIME SYNC
+    function subscribeToFirestoreAlerts() {
+      const q = window.FB.query(window.FB.collection(window.FB.db, "alerts"), window.FB.orderBy("updatedAt", "desc"));
+      window.FB.onSnapshot(q, (snapshot) => {
+        const alerts = [];
+        snapshot.forEach((doc) => {
+          alerts.push({ id: doc.id, ...doc.data() });
+        });
+        window.AppState.alerts = alerts;
+        renderAlertsTable();
+      });
+    }
+
+    function isAlertOwnedByCurrentUser(alert, user) {
+      if (alert.postedByUid) return alert.postedByUid === user.uid;
+      return alert.postedBy === `${user.fullName} (${user.company})`;
+    }
+
+    function switchAlertTab(tab) {
+      window.AppState.activeTab = tab;
+      const receivedTab = document.getElementById('tabReceived');
+      const sentTab = document.getElementById('tabSent');
+      receivedTab.className = tab === 'received'
+        ? 'px-4 py-1.5 text-sm font-semibold bg-teal-700 text-white'
+        : 'px-4 py-1.5 text-sm font-semibold bg-white text-gray-600';
+      sentTab.className = tab === 'sent'
+        ? 'px-4 py-1.5 text-sm font-semibold bg-teal-700 text-white'
+        : 'px-4 py-1.5 text-sm font-semibold bg-white text-gray-600';
+      renderAlertsTable();
+    }
+
+    // RENDER ALERTS TABLE
+    function renderAlertsTable() {
+      const tbody = document.getElementById('alertsTableBody');
+      const emptyState = document.getElementById('emptyState');
+      const currentUser = window.AppState.currentUser;
+      tbody.innerHTML = '';
+
+      const receivedAlerts = window.AppState.alerts.filter(alert => !isAlertOwnedByCurrentUser(alert, currentUser));
+      const sentAlerts = window.AppState.alerts.filter(alert => isAlertOwnedByCurrentUser(alert, currentUser));
+      document.getElementById('receivedCount').innerText = receivedAlerts.length;
+      document.getElementById('sentCount').innerText = sentAlerts.length;
+
+      let filtered = window.AppState.alerts.filter(item => {
+        const matchesSearch = item.duId.toLowerCase().includes(window.AppState.searchTerm.toLowerCase()) ||
+                              item.description.toLowerCase().includes(window.AppState.searchTerm.toLowerCase());
+        const matchesRegion = window.AppState.filterRegion === 'ALL' || item.region === window.AppState.filterRegion;
+        const matchesStatus = window.AppState.filterStatus === 'ALL' || item.status === window.AppState.filterStatus;
+        const isReceived = !isAlertOwnedByCurrentUser(item, currentUser);
+        const matchesTab = window.AppState.activeTab === 'received' ? isReceived : !isReceived;
+        return matchesSearch && matchesRegion && matchesStatus && matchesTab;
+      });
+
+      // Update Metrics
+      document.getElementById('statTotal').innerText = window.AppState.alerts.length;
+      document.getElementById('statPending').innerText = window.AppState.alerts.filter(a => a.status === 'PENDING').length;
+      document.getElementById('statUnderCheck').innerText = window.AppState.alerts.filter(a => a.status === 'UNDER_CHECK').length;
+      document.getElementById('statSolved').innerText = window.AppState.alerts.filter(a => a.status === 'SOLVED').length;
+
+      if (filtered.length === 0) {
+        emptyState.classList.remove('hidden');
+        return;
+      } else {
+        emptyState.classList.add('hidden');
+      }
+
+      filtered.forEach((alert) => {
+        const tr = document.createElement('tr');
+        tr.className = "hover:bg-gray-50/80 transition";
+        const isReceived = !isAlertOwnedByCurrentUser(alert, currentUser);
+
+        // Status Colors & Badge
+        let statusBadgeClass = "bg-amber-100 text-amber-800 border-amber-300";
+        let statusLabel = "Pending";
+        if (alert.status === 'UNDER_CHECK') {
+          statusBadgeClass = "bg-indigo-100 text-indigo-800 border-indigo-300";
+          statusLabel = "Under Check";
+        } else if (alert.status === 'NEEDS_INFO') {
+          statusBadgeClass = "bg-rose-100 text-rose-800 border-rose-300";
+          statusLabel = "Needs Info";
+        } else if (alert.status === 'SOLVED') {
+          statusBadgeClass = "bg-emerald-100 text-emerald-800 border-emerald-300";
+          statusLabel = "Solved";
+        }
+
+        tr.innerHTML = `
+          <td class="py-3.5 px-4 font-bold text-teal-800">
+            ${alert.duId}
+            <span class="block text-xs font-normal text-gray-500">${alert.category || 'Site Issue'}</span>
+          </td>
+          <td class="py-3.5 px-4">
+            <span class="px-2 py-1 text-xs font-semibold rounded bg-gray-100 text-gray-700 border border-gray-200">${alert.region}</span>
+          </td>
+          <td class="py-3.5 px-4 max-w-xs">
+            <p class="text-xs text-gray-800 line-clamp-2">${alert.description}</p>
+          </td>
+          <td class="py-3.5 px-4 text-xs text-gray-600">
+            ${alert.postedBy}
+          </td>
+          <td class="py-3.5 px-4 max-w-xs">
+            ${isReceived ? `
+              <div class="space-y-1">
+                <input type="text" id="feedbackInput-${alert.id}" value="${alert.feedback || ''}" placeholder="Type action feedback..." class="w-full text-xs px-2 py-1 border border-gray-300 rounded focus:ring-1 focus:ring-teal-600">
+                <button onclick="saveFeedback('${alert.id}')" class="text-xs bg-teal-700 hover:bg-teal-800 text-white px-2 py-0.5 rounded shadow-sm">Send Feedback</button>
+              </div>
+            ` : `
+              <p class="text-xs text-gray-700 italic">${alert.feedback || 'No feedback provided yet.'}</p>
+            `}
+          </td>
+          <td class="py-3.5 px-4">
+            ${currentUser.role === 'SUBCONTRACTOR' && isReceived ? `
+              <select onchange="updateAlertStatus('${alert.id}', this.value)" class="text-xs border border-gray-300 rounded px-2 py-1 bg-white font-medium">
+                <option value="PENDING" ${alert.status === 'PENDING' ? 'selected' : ''}>Pending</option>
+                <option value="UNDER_CHECK" ${alert.status === 'UNDER_CHECK' ? 'selected' : ''}>Under Check</option>
+                <option value="NEEDS_INFO" ${alert.status === 'NEEDS_INFO' ? 'selected' : ''}>Needs Info</option>
+                <option value="SOLVED" ${alert.status === 'SOLVED' ? 'selected' : ''}>Solved</option>
+              </select>
+            ` : `
+              <span class="inline-block px-2.5 py-1 text-xs font-bold rounded-full border ${statusBadgeClass}">${statusLabel}</span>
+            `}
+          </td>
+          <td class="py-3.5 px-4 text-center">
+            <button onclick="copyWhatsAppFormat('${alert.id}')" title="Copy WhatsApp Message" class="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition">
+              <i class="fa-brands fa-whatsapp text-lg"></i>
+            </button>
+          </td>
+        `;
+
+        tbody.appendChild(tr);
+      });
+    }
+
+    // ACTIONS: POST NEW ALERT (HUAWEIPM)
+    async function handleCreateAlert(e) {
+      e.preventDefault();
+      const user = window.AppState.currentUser;
+      const duId = document.getElementById('newDuId').value.trim();
+      const region = document.getElementById('newRegion').value;
+      const category = document.getElementById('newCategory').value;
+      const description = document.getElementById('newDescription').value.trim();
+
+      const newAlert = {
+        duId,
+        region,
+        category,
+        description,
+        postedByUid: user.uid,
+        postedBy: user.fullName + ' (' + user.company + ')',
+        feedback: 'Under check by subcontractor',
+        status: 'PENDING',
+        updatedAt: new Date().toLocaleTimeString()
+      };
+
+      if (window.FB && window.FB.isFirebaseConfigured) {
+        await window.FB.addDoc(window.FB.collection(window.FB.db, "alerts"), {
+          ...newAlert,
+          createdAt: window.FB.serverTimestamp()
+        });
+      } else {
+        newAlert.id = 'alt-' + Date.now();
+        window.AppState.alerts.unshift(newAlert);
+        localStorage.setItem('telecom_alerts', JSON.stringify(window.AppState.alerts));
+        renderAlertsTable();
+      }
+
+      closeAlertModal();
+    }
+
+    // ACTIONS: UPDATE FEEDBACK (SUBCONTRACTOR)
+    async function saveFeedback(alertId) {
+      const input = document.getElementById(`feedbackInput-${alertId}`);
+      const feedbackText = input.value.trim();
+
+      if (window.FB && window.FB.isFirebaseConfigured) {
+        await window.FB.updateDoc(window.FB.doc(window.FB.db, "alerts", alertId), {
+          feedback: feedbackText,
+          updatedAt: new Date().toLocaleTimeString()
+        });
+      } else {
+        const item = window.AppState.alerts.find(a => a.id === alertId);
+        if (item) {
+          item.feedback = feedbackText;
+          item.updatedAt = new Date().toLocaleTimeString();
+          localStorage.setItem('telecom_alerts', JSON.stringify(window.AppState.alerts));
+          renderAlertsTable();
+        }
+      }
+      alert("Feedback updated successfully!");
+    }
+
+    // ACTIONS: UPDATE STATUS (SUBCONTRACTOR)
+    async function updateAlertStatus(alertId, newStatus) {
+      if (window.FB && window.FB.isFirebaseConfigured) {
+        await window.FB.updateDoc(window.FB.doc(window.FB.db, "alerts", alertId), {
+          status: newStatus,
+          updatedAt: new Date().toLocaleTimeString()
+        });
+      } else {
+        const item = window.AppState.alerts.find(a => a.id === alertId);
+        if (item) {
+          item.status = newStatus;
+          item.updatedAt = new Date().toLocaleTimeString();
+          localStorage.setItem('telecom_alerts', JSON.stringify(window.AppState.alerts));
+          renderAlertsTable();
+        }
+      }
+    }
+
+    // COPY FORMATTED WHATSAPP MESSAGE
+    function copyWhatsAppFormat(alertId) {
+      const alertItem = window.AppState.alerts.find(a => a.id === alertId);
+      if (!alertItem) return;
+
+      const formattedMessage = `🚨 *TELECOM SITE ALERT FOLLOW-UP*\n` +
+        `• *DU ID:* ${alertItem.duId}\n` +
+        `• *Region:* ${alertItem.region}\n` +
+        `• *Issue:* ${alertItem.description}\n` +
+        `• *Subcontractor Status:* ${alertItem.status}\n` +
+        `• *Latest Feedback:* ${alertItem.feedback || 'Under check'}\n` +
+        `• *Updated:* ${alertItem.updatedAt}`;
+
+      navigator.clipboard.writeText(formattedMessage).then(() => {
+        alert("WhatsApp message copied to clipboard!");
+      });
+    }
+
+    // FILTER & SEARCH HANDLERS
+    function handleSearch(val) {
+      window.AppState.searchTerm = val;
+      renderAlertsTable();
+    }
+
+    function applyFilters() {
+      window.AppState.filterRegion = document.getElementById('filterRegion').value;
+      window.AppState.filterStatus = document.getElementById('filterStatus').value;
+      renderAlertsTable();
+    }
+
+    // MODAL CONTROL
+    function openAlertModal() {
+      document.getElementById('alertModal').classList.remove('hidden');
+    }
+
+    function closeAlertModal() {
+      document.getElementById('alertModal').classList.add('hidden');
+    }
+  </script>
+</body>
+</html>
