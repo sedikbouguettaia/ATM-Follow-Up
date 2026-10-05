@@ -81,6 +81,7 @@
 
     // Make Firebase services accessible globally for UI event handlers
     window.FB = { auth, db, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, updateProfile, collection, doc, setDoc, getDoc, addDoc, onSnapshot, updateDoc, deleteDoc, query, orderBy, serverTimestamp, isFirebaseConfigured };
+    window.dispatchEvent(new Event('firebase-ready'));
   </script>
 
   <style>
@@ -487,6 +488,54 @@
       return Boolean(user && (user.role === 'ADMIN' || isAdminEmail(user.email)));
     }
 
+    function persistSession(user) {
+      localStorage.setItem('atm-auth-session', JSON.stringify(user));
+    }
+
+    function clearPersistedSession() {
+      localStorage.removeItem('atm-auth-session');
+    }
+
+    function restoreLocalSession() {
+      let savedSession;
+      try {
+        savedSession = JSON.parse(localStorage.getItem('atm-auth-session'));
+      } catch (error) {
+        clearPersistedSession();
+        return;
+      }
+      if (savedSession) {
+        window.AppState.currentUser = savedSession;
+        initializeDashboard();
+      }
+    }
+
+    function restoreFirebaseSession() {
+      window.FB.onAuthStateChanged(window.FB.auth, async (firebaseUser) => {
+        if (!firebaseUser) return;
+        const userDoc = await window.FB.getDoc(window.FB.doc(window.FB.db, 'users', firebaseUser.uid));
+        const userData = userDoc.data() || {};
+        window.AppState.currentUser = {
+          uid: firebaseUser.uid,
+          fullName: firebaseUser.displayName || userData.fullName || firebaseUser.email,
+          role: isAdminEmail(firebaseUser.email) ? 'ADMIN' : userData.role || 'HUAWEIPM',
+          company: userData.company || 'Huawei',
+          region: userData.region || 'ALL',
+          email: firebaseUser.email
+        };
+        initializeDashboard();
+      });
+    }
+
+    function restoreSession() {
+      if (!window.AppState) return;
+      if (window.FB && window.FB.isFirebaseConfigured) {
+        restoreFirebaseSession();
+      } else {
+        restoreLocalSession();
+      }
+    }
+
     // AUTH SIGN-UP IMPLEMENTATION
     async function handleSignup(e) {
       e.preventDefault();
@@ -588,6 +637,7 @@
         window.FB.signOut(window.FB.auth);
       }
       window.AppState.currentUser = null;
+      clearPersistedSession();
       document.getElementById('authSection').classList.remove('hidden');
       document.getElementById('dashboardSection').classList.add('hidden');
       document.getElementById('userHeaderBadge').classList.add('hidden');
@@ -630,6 +680,7 @@
     function initializeDashboard() {
       const user = window.AppState.currentUser;
       if (!user) return;
+      persistSession(user);
       const admin = isAdminUser(user);
 
       // Update Header User Profile
@@ -1072,6 +1123,9 @@
     function closeAlertModal() {
       document.getElementById('alertModal').classList.add('hidden');
     }
+
+    window.addEventListener('firebase-ready', restoreSession);
+    restoreSession();
   </script>
 </body>
 </html>
